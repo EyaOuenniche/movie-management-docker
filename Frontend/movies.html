@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Management</title>
+    <script>
+        async function fetchProfile() {
+            const username = localStorage.getItem('username');
+            if (!username) {
+                alert("Not logged in. Redirecting to login page.");
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`http://localhost:3000/profile/${username}`);
+                if (!response.ok) {
+                    throw new Error("User not found");
+                }
+                const profile = await response.json();
+                document.getElementById('profile-info').innerText = `Logged in as: ${profile.username}`;
+            } catch (error) {
+                alert("Error fetching profile.");
+                console.error(error);
+            }
+        }
+
+        function logoutUser() {
+            localStorage.removeItem('username');
+            alert("Logged out successfully.");
+            window.location.href = 'index.html';
+        }
+
+        async function fetchMovies() {
+            const response = await fetch('http://localhost:3000/movies');
+            const movies = await response.json();
+            document.getElementById('movie-list').innerHTML = movies.map(m => 
+                `<li>${m.title} - ${m.director} - ${m.category} 
+                    <button onclick="updateCategory('${m._id}')">Update Category</button>
+                    <button onclick="deleteMovie('${m._id}')">Delete</button>
+                </li>`).join('');
+        }
+
+        async function addMovie() {
+            const title = document.getElementById('title').value;
+            const director = document.getElementById('director').value;
+            const category = document.getElementById('category').value;
+            await fetch('http://localhost:3000/movies', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, director, category })
+            });
+            fetchMovies();
+        }
+
+        async function updateCategory(id) {
+            const newCategory = prompt("Enter new category:");
+            if (newCategory) {
+                await fetch(`http://localhost:3000/movies/update-category/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category: newCategory })
+                });
+                fetchMovies();
+            }
+        }
+
+        async function deleteMovie(id) {
+            if (confirm("Are you sure you want to delete this movie?")) {
+                await fetch(`http://localhost:3000/movies/${id}`, {
+                    method: 'DELETE'
+                });
+                fetchMovies();
+            }
+        }
+    </script>
+</head>
+<body onload="fetchProfile(); fetchMovies()">
+    <h1>Movie Management</h1>
+    <p id="profile-info"></p>
+    <button onclick="logoutUser()">Logout</button>
+    <ul id="movie-list"></ul>
+    <h2>Add Movie</h2>
+    <input type="text" id="title" placeholder="Title">
+    <input type="text" id="director" placeholder="Director">
+    <input type="text" id="category" placeholder="Category">
+    <button onclick="addMovie()">Add</button>
+</body>
+</html>
