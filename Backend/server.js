@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
+const amqp = require('amqplib');
 
 const app = express();
 app.use(cors());
@@ -13,6 +14,25 @@ mongoose.connect('mongodb://localhost:27017/moviesdb', {
     useUnifiedTopology: true
 }).then(() => console.log("MongoDB connected"))
   .catch(err => console.log(err));
+
+
+// RabbitMQ Setup
+const RABBITMQ_URL = 'amqp://localhost';
+const QUEUE_NAME = 'movieLogQueue';
+
+async function sendToQueue(message) {
+    try {
+        const connection = await amqp.connect(RABBITMQ_URL);
+        const channel = await connection.createChannel();
+        await channel.assertQueue(QUEUE_NAME, { durable: true });
+        channel.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify(message)), { persistent: true });
+        console.log(" [x] Sent", message);
+        setTimeout(() => connection.close(), 500);
+    } catch (error) {
+        console.error("RabbitMQ Error:", error);
+    }
+}
+
 
 // User Schema
 const userSchema = new mongoose.Schema({
@@ -64,11 +84,15 @@ app.get('/movies', async (req, res) => {
     res.json(movies);
 });
 
-// POST add a new movie
+// Add a movie/rabbitmq
 app.post('/movies', async (req, res) => {
     const { title, director, category } = req.body;
     const newMovie = new Movie({ title, director, category });
     await newMovie.save();
+
+    // Send log message to RabbitMQ
+    await sendToQueue({ action: 'ADD', movie: newMovie });
+
     res.status(201).json(newMovie);
 });
 
@@ -79,10 +103,15 @@ app.put('/movies/update-category/:id', async (req, res) => {
   updatedMovie ? res.json(updatedMovie) : res.status(404).json({ message: "Movie not found" });
 });
 
-// DELETE a movie
+// Delete a movie /rabbitmq
 app.delete('/movies/:id', async (req, res) => {
-  const deletedMovie = await Movie.findByIdAndDelete(req.params.id);
-  deletedMovie ? res.json({ message: "Movie deleted successfully" }) : res.status(404).json({ message: "Movie not found" });
+    const deletedMovie = await Movie.findByIdAndDelete(req.params.id);
+    if (deletedMovie) {
+        await sendToQueue({ action: 'DELETE', movie: deletedMovie });
+        res.json({ message: "Movie deleted successfully" });
+    } else {
+        res.status(404).json({ message: "Movie not found" });
+    }
 });
 
 const PORT = 3000;
